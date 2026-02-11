@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const AdmZip = require('adm-zip');
 const { spawn } = require('child_process');
-const { USER_DATA_DIR, CHROME_PATH, AI_STUDIO_URL, AI_STUDIO_HOME_URL } = require('../constant');
+const { USER_DATA_DIR, CHROME_PATH } = require('../constant');
 
 let browser;
 let browserContext; // 存储持久化上下文实例
@@ -17,7 +17,6 @@ let tasks = 0; // 存储任务数量
 //   }
 // }, 1000 * 60 * 5)
 
-const initializeBrowser = async () => { }
 
 /**
  * 创建错误监控器
@@ -110,18 +109,54 @@ const initBrowserPage = async () => {
     ],
     viewport: null // 禁用默认 viewport，使用最大化窗口
   });
-  console.log('Persistent Browser ready');
+  console.log('Browser ready');
 
   const page = await browserContext.newPage();
   console.log('page open');
   return page;
 }
 
+// 模式选择器：即梦 AI 页面上的 lv-select 下拉（Agent 模式 / 视频生成 等）
+const MODE_SELECT_VALUE = '.lv-select-view-value';
+const MODE_SELECT_TRIGGER = '.lv-select-view'; // 点击打开下拉
+const TARGET_MODE = '视频生成';
+
+const setOptions = async (page) => {
+  // 先判断当前是否为「视频生成」，不是则点击下拉并选择「视频生成」
+  const valueEl = page.locator(MODE_SELECT_VALUE).first();
+  await valueEl.waitFor({ state: 'visible', timeout: 10000 }).catch(() => null);
+
+  const currentText = (await valueEl.innerText()).trim();
+  if (currentText === TARGET_MODE) {
+    console.log('[setOptions] 当前已是视频生成，无需切换');
+    return;
+  } else {
+    console.log(`[setOptions] 当前模式: "${currentText}"，切换到: ${TARGET_MODE}`);
+    await page.locator(MODE_SELECT_TRIGGER).first().click();
+    await page.waitForTimeout(400); // 等待下拉展开
+
+    // 视频生成选项：下拉在 body/div[5] 下，第 3 个 li（用 li 点击更稳）
+    const optionXpath = 'xpath=/html/body/div[5]/span/div/div[2]/div/div/li[3]';
+    const option = page.locator(optionXpath);
+    await option.waitFor({ state: 'visible', timeout: 5000 });
+    await option.click({ force: true });
+    await page.waitForTimeout(300);
+    console.log('[setOptions] 已选择视频生成');    
+  }
+  // 根据model选择模型 
+
+  // 选择收尾帧
+
+  // 选择比例
+
+  // 选择时长
+
+ 
+}
 
 
 module.exports = {
   initBrowserPage: initBrowserPage,
-
-  initializeBrowser: initializeBrowser,
+  setOptions: setOptions,
 
 }
