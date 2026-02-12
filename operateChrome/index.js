@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const AdmZip = require('adm-zip');
 const { spawn } = require('child_process');
-const { USER_DATA_DIR, CHROME_PATH } = require('../constant');
+const { USER_DATA_DIR, CHROME_PATH, SERVER_URL } = require('../constant');
 
 let browser;
 let browserContext; // 存储持久化上下文实例
@@ -311,13 +311,20 @@ const setPrompt = async (page, prompt) => {
  * 优先用本地 path（同机时服务端已存 .tmp/projectId），否则用 URL 下载到临时文件后 setInputFiles，用完即删，不重复存。
  */
 const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, endFramePath } = {}) => {
-  const os = require('os');
-
   const resolveLocalOrFetch = async (pathOrUrl, label) => {
     if (pathOrUrl && fs.existsSync(pathOrUrl)) return pathOrUrl;
-    if (!pathOrUrl || !pathOrUrl.startsWith('http')) return null;
+    if (!pathOrUrl) return null;
+    // 如果不是完整的 URL，拼接上 SERVER_URL
+    let fullUrl = pathOrUrl;
+    if (!pathOrUrl.startsWith('http')) {
+      if (pathOrUrl.startsWith('/')) {
+        fullUrl = `${SERVER_URL}${pathOrUrl}`;
+      } else {
+        return null;
+      }
+    }
     try {
-      const res = await fetch(pathOrUrl);
+      const res = await fetch(fullUrl);
       if (!res.ok) return null;
       const buf = Buffer.from(await res.arrayBuffer());
       const ext = (pathOrUrl.match(/\.(png|jpe?g|webp)/i) || [null, 'png'])[1];
@@ -325,7 +332,7 @@ const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, end
       fs.writeFileSync(tmpPath, buf);
       return tmpPath;
     } catch (e) {
-      console.warn('[setImages] 下载失败:', pathOrUrl, e.message);
+      console.warn('[setImages] 下载失败:', fullUrl, e.message);
       return null;
     }
   };
