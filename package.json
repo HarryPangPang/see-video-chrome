@@ -18,6 +18,8 @@
     "node-schedule": "^2.1.1",
     "nodemon": "^3.1.11",
     "playwright": "^1.57.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
     "uuid": "^13.0.0",
     "uuidv4": "^6.2.13"
   }

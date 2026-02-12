@@ -13,6 +13,7 @@ const {
     getVideoList,
 } = require('./operateChrome/index');
 const { SERVER_URL, JIMENG_VIDEO_URL } = require('./constant');
+const { updateVideoGenerationPaths } = require('./db');
 
 // 生成内部服务认证 token（固定的虚拟 token）
 const INTERNAL_SERVICE_TOKEN = 'internal-service-proxy-2024-secret-token-xyz';
@@ -191,12 +192,15 @@ async function processAssets(assets, concurrency = 3, projectid = null) {
                     }
                 }
 
-                // 保存到数据库
+                // 保存到数据库（直接连接数据库）
                 if (result.video_local_path || result.cover_local_path) {
                     try {
-                        await axios.post(`${SERVER_URL}/api/video-generations/update-paths`, result, {
-                            headers: { 'Authorization': `Bearer ${INTERNAL_SERVICE_TOKEN}` },
-                            timeout: 10000
+                        await updateVideoGenerationPaths({
+                            generate_id: generateId,
+                            video_url: result.video_url,
+                            video_local_path: result.video_local_path,
+                            cover_url: result.cover_url,
+                            cover_local_path: result.cover_local_path
                         });
                         console.log(`[processAssets] Saved asset ${generateId} to database`);
                     } catch (dbErr) {
