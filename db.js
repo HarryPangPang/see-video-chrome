@@ -50,7 +50,7 @@ async function updateVideoGenerationPaths({ generate_id, video_url, video_local_
             'SELECT id FROM video_generations WHERE generate_id = ?',
             generate_id
         );
-
+        console.log(`[DB] Existing record for generate_id ${generate_id}:`, existing);
         if (existing) {
             // 更新现有记录（使用 COALESCE 保留已有值）
             await db.run(

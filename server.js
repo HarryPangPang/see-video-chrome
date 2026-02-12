@@ -116,7 +116,7 @@ async function downloadFile(url, destPath, timeout = 60000) {
  */
 async function processAssets(assets, concurrency = 3, projectid = null) {
     const results = [];
-    const SERVER_TMP_DIR = path.join(__dirname, '../see-video-server/.tmp', projectid || 'default');
+    const SERVER_TMP_DIR = path.join(__dirname, '../see-video-server/.tmp', projectid || '');
     console.log(`[processAssets] Starting to process ${assets.length} assets with concurrency ${concurrency}`);
     for (let i = 0; i < assets.length; i += concurrency) {
         const batch = assets.slice(i, i + concurrency);
