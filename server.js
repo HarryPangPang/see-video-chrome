@@ -8,6 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 const {
     initBrowserPage,
     setOptions,
+    getVideoList,
 } = require('./operateChrome/index');
 const { SERVER_URL, JIMENG_VIDEO_URL } = require('./constant');
 
@@ -44,7 +45,39 @@ router.post('/api/generate', async (ctx) => {
         ctx.body = { success: false, error: err.message };
     }
 });
+router.get('/api/get_asset_list', async (ctx) => {
+    console.log('[Jimeng] 获取视频列表请求');
+    try {
+        const page = await initBrowserPage();
+        await page.goto(JIMENG_VIDEO_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        console.log('[Jimeng] 页面已加载，开始获取视频列表');
 
+        // 获取视频列表数据
+        const videoData = await getVideoList(page, { count: 20 });
+
+        if (videoData) {
+            console.log('[Jimeng] 视频列表获取成功，数量:', videoData.asset_list?.length || 0);
+            ctx.body = {
+                success: true,
+                data: videoData
+            };
+        } else {
+            console.warn('[Jimeng] 视频列表获取失败');
+            ctx.status = 500;
+            ctx.body = {
+                success: false,
+                error: '获取视频列表失败'
+            };
+        }
+    } catch (err) {
+        console.error('[Jimeng] 获取视频列表错误:', err);
+        ctx.status = 500;
+        ctx.body = {
+            success: false,
+            error: err.message
+        };
+    }
+})
 app.use(router.routes()).use(router.allowedMethods());
 
 app.listen(PORT, () => {

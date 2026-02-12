@@ -369,9 +369,95 @@ const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, end
   await setFileInContainer(START_FRAME_CONTAINER, startPath, !!startFrameUrl && !startFramePath);
   await setFileInContainer(END_FRAME_CONTAINER, endPath, !!endFrameUrl && !endFramePath);
 }
+
+/**
+ * 获取即梦视频列表
+ * @param {Page} page - Playwright 页面对象
+ * @param {Object} options - 可选参数
+ * @param {number} options.count - 获取数量，默认 20
+ * @param {number} options.endTimeStamp - 结束时间戳，默认 0
+ * @returns {Promise<Object|null>} 返回视频列表数据或 null
+ */
+const getVideoList = async (page, options = {}) => {
+  const { count = 20, endTimeStamp = 0 } = options;
+
+  const requestBody = {
+    count,
+    direction: 1,
+    mode: 'workbench',
+    option: {
+      image_info: {
+        width: 2048,
+        height: 2048,
+        format: 'webp',
+        image_scene_list: [
+          { scene: 'normal', width: 2400, height: 2400, uniq_key: '2400', format: 'webp' },
+          { scene: 'loss', width: 1080, height: 1080, uniq_key: '1080', format: 'webp' },
+          { scene: 'loss', width: 720, height: 720, uniq_key: '720', format: 'webp' },
+          { scene: 'loss', width: 480, height: 480, uniq_key: '480', format: 'webp' }
+        ]
+      },
+      origin_image_info: {
+        width: 96,
+        height: 2048,
+        format: 'webp',
+        image_scene_list: [
+          { scene: 'normal', width: 2400, height: 2400, uniq_key: '2400', format: 'webp' },
+          { scene: 'loss', width: 1080, height: 1080, uniq_key: '1080', format: 'webp' }
+        ]
+      },
+      order_by: 0,
+      only_favorited: false,
+      end_time_stamp: endTimeStamp,
+      hide_story_agent_result: true
+    },
+    asset_type_list: [1, 2, 5, 6, 7, 8, 9, 10]
+  };
+
+  try {
+    console.log('[getVideoList] 开始请求视频列表...');
+    const response = await page.request.post(
+      'https://jimeng.jianying.com/mweb/v1/get_asset_list?aid=513695&web_version=7.5.0&da_version=3.3.9&aigc_features=app_lip_sync',
+      {
+        headers: {
+          'accept': 'application/json, text/plain, */*',
+          'content-type': 'application/json',
+          'app-sdk-version': '48.0.0',
+          'appid': '513695',
+          'appvr': '8.4.0',
+          'lan': 'zh-Hans',
+          'loc': 'cn',
+          'pf': '7',
+          'origin': 'https://jimeng.jianying.com',
+          'referer': 'https://jimeng.jianying.com/ai-tool/generate'
+        },
+        data: requestBody
+      }
+    );
+
+    if (response.ok()) {
+      const data = await response.json();
+      if (data.ret === '0') {
+        console.log('[getVideoList] 获取成功，视频数量:', data.data?.asset_list?.length || 0);
+        return data.data;
+      } else {
+        console.warn('[getVideoList] API 返回错误:', data.errmsg);
+        return null;
+      }
+    } else {
+      console.warn('[getVideoList] 请求失败，状态码:', response.status());
+      return null;
+    }
+  } catch (e) {
+    console.error('[getVideoList] 请求异常:', e.message);
+    return null;
+  }
+};
+
 module.exports = {
   initBrowserPage: initBrowserPage,
   setOptions: setOptions,
   setPrompt: setPrompt,
-  setImages
+  setImages,
+  getVideoList
 }
