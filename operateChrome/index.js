@@ -12,6 +12,7 @@ let tasks = 0; // 存储任务数量
 
 const ModelMap = {
   'seedance20': 'Seedance 2.0',
+  'seedance20fast': 'Seedance 2.0 Fast',
   '35pro': '视频 3.5 Pro',
   '30pro': '视频 3.0 Pro',
   '30fast': '视频 3.0 Fast',
@@ -19,10 +20,11 @@ const ModelMap = {
 }
 const ModelPosition = {
   'seedance20': 1,
-  '35pro': 2,
-  '30pro': 3,
-  '30fast': 4,
-  '30': 5,
+  'seedance20fast': 2,
+  '35pro': 3,
+  '30pro': 4,
+  '30fast': 5,
+  '30': 6,
 }
 const durationMap = {
   '4s': 4,
