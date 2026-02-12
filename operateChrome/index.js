@@ -178,10 +178,8 @@ const GENERATE_BUTTON_SELECTOR = '#dreamina-ui-configuration-content-wrapper .to
 const formatDuration = (v) => (v == null ? '' : String(v).endsWith('s') ? String(v) : `${v}s`);
 
 const setOptions = async (page, options = {}) => {
-  const { model, duration, imagesDir, prompt, startFramePath, endFramePath } = options;
+  const { model, duration, prompt, startFrameUrl, endFrameUrl, startFramePath, endFramePath } = options;
   const durationStr = formatDuration(duration);
-  // imagesDir: 服务端保存的本地目录路径 .tmp/projectId，内有 start.* / end.* 可供上传
-  if (imagesDir) console.log('[setOptions] imagesDir:', imagesDir);
 
   // 1. 模式：先判断是否为「视频生成」，不是则点击并选择
   const valueEl = page.locator('.lv-select-view-value').first();
@@ -263,9 +261,9 @@ const setOptions = async (page, options = {}) => {
     await setPrompt(page, String(prompt).trim());
   }
 
-  // 5. 首帧/尾帧：用服务端下发的本地路径通过 input[file] 选图
-  if (startFramePath || endFramePath) {
-    await setImages(page, { startFramePath, endFramePath });
+  // 5. 首帧/尾帧：用地址（优先本地 path，否则用 URL 下载到临时文件后上传，不重复存）
+  if (startFramePath || endFramePath || startFrameUrl || endFrameUrl) {
+    await setImages(page, { startFrameUrl, endFrameUrl, startFramePath, endFramePath });
   }
 
   // 6. 等 200ms 后点击「生成」按钮，并监听生成接口响应以拿到 generate_id（见 jimeng.md 生成接口 / 生成结果返回）
@@ -281,7 +279,7 @@ const setOptions = async (page, options = {}) => {
   const responsePromise = page.waitForResponse(isGenerateApi, { timeout: 30000 }).catch(() => null);
 
   if (await generateBtn.isVisible()) {
-    await generateBtn.click();
+    // await generateBtn.click();
     console.log('[setOptions] 已点击生成按钮');
   }
 
@@ -307,35 +305,60 @@ const setPrompt = async (page, prompt) => {
   console.log('[setPrompt] 已填入提示词，长度:', prompt.length);
 }
 /**
- * 根据传过来的图片路径在即梦页面上选择首帧/尾帧。
- * 使用本地 path：服务端已把 base64 存到 .tmp/projectId，传 startFramePath/endFramePath，Playwright setInputFiles 直接传路径即可。
+ * 根据传过来的图片地址在即梦页面上选择首帧/尾帧。
+ * 优先用本地 path（同机时服务端已存 .tmp/projectId），否则用 URL 下载到临时文件后 setInputFiles，用完即删，不重复存。
  */
-const setImages = async (page, { startFramePath, endFramePath } = {}) => {
-  const setFileInContainer = async (containerSelector, filePath) => {
-    if (!filePath || !fs.existsSync(filePath)) {
-      console.log('[setImages] 跳过，文件不存在:', filePath);
-      return;
+const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, endFramePath } = {}) => {
+  const os = require('os');
+
+  const resolveLocalOrFetch = async (pathOrUrl, label) => {
+    if (pathOrUrl && fs.existsSync(pathOrUrl)) return pathOrUrl;
+    if (!pathOrUrl || !pathOrUrl.startsWith('http')) return null;
+    try {
+      const res = await fetch(pathOrUrl);
+      if (!res.ok) return null;
+      const buf = Buffer.from(await res.arrayBuffer());
+      const ext = (pathOrUrl.match(/\.(png|jpe?g|webp)/i) || [null, 'png'])[1];
+      const tmpPath = path.join(os.tmpdir(), `jimeng-${label}-${Date.now()}.${ext}`);
+      fs.writeFileSync(tmpPath, buf);
+      return tmpPath;
+    } catch (e) {
+      console.warn('[setImages] 下载失败:', pathOrUrl, e.message);
+      return null;
     }
+  };
+
+  const setFileInContainer = async (containerSelector, filePath, isTemp) => {
+    if (!filePath) return;
     const container = page.locator(containerSelector).first();
     await container.waitFor({ state: 'visible', timeout: 10000 }).catch(() => null);
     if (!(await container.isVisible())) return;
-    const fileInput = container.locator('input[type="file"]').first();
-    const count = await fileInput.count();
-    if (count === 0) {
+    let input = container.locator('input[type="file"]').first();
+    if ((await input.count()) === 0) {
       const uploadArea = container.locator('[class*="upload"], [class*="drop"], [class*="reference"]').first();
       await uploadArea.click().catch(() => null);
       await page.waitForTimeout(500);
     }
-    const input = container.locator('input[type="file"]').first();
+    input = container.locator('input[type="file"]').first();
     await input.waitFor({ state: 'attached', timeout: 5000 }).catch(() => null);
-    if (await input.count() > 0) {
+    if ((await input.count()) > 0) {
       await input.setInputFiles(filePath);
       console.log('[setImages] 已选择图片:', filePath);
     }
+    if (isTemp && fs.existsSync(filePath)) {
+      try { fs.unlinkSync(filePath); } catch (_) {}
+    }
   };
 
-  if (startFramePath) await setFileInContainer(START_FRAME_CONTAINER, startFramePath);
-  if (endFramePath) await setFileInContainer(END_FRAME_CONTAINER, endFramePath);
+  const startPath = startFramePath && fs.existsSync(startFramePath)
+    ? startFramePath
+    : await resolveLocalOrFetch(startFrameUrl, 'start');
+  const endPath = endFramePath && fs.existsSync(endFramePath)
+    ? endFramePath
+    : await resolveLocalOrFetch(endFrameUrl, 'end');
+
+  await setFileInContainer(START_FRAME_CONTAINER, startPath, !!startFrameUrl && !startFramePath);
+  await setFileInContainer(END_FRAME_CONTAINER, endPath, !!endFrameUrl && !endFramePath);
 }
 module.exports = {
   initBrowserPage: initBrowserPage,
