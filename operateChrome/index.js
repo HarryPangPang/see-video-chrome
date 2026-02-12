@@ -379,7 +379,7 @@ const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, end
  * @returns {Promise<Object|null>} 返回视频列表数据或 null
  */
 const getVideoList = async (page, options = {}) => {
-  const { count = 20, endTimeStamp = 0 } = options;
+  const { count = 200, endTimeStamp = 0 } = options;
 
   const requestBody = {
     count,
