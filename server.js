@@ -113,9 +113,9 @@ async function downloadFile(url, destPath, timeout = 60000) {
 /**
  * 批量下载视频资源（并发控制）
  */
-async function processAssets(assets, concurrency = 3) {
+async function processAssets(assets, concurrency = 3, projectid = null) {
     const results = [];
-    const SERVER_TMP_DIR = path.join(__dirname, '../see-video-server/.tmp');
+    const SERVER_TMP_DIR = path.join(__dirname, '../see-video-server/.tmp', projectid || 'default');
     console.log(`[processAssets] Starting to process ${assets.length} assets with concurrency ${concurrency}`);
     for (let i = 0; i < assets.length; i += concurrency) {
         const batch = assets.slice(i, i + concurrency);
@@ -175,8 +175,7 @@ async function processAssets(assets, concurrency = 3) {
 
                 // 下载封面（如果不存在）
                 if (coverUrl && !hasCover) {
-                    const coverExt ='.jpg';
-                    const coverPath = path.join(assetDir, `cover.${coverExt}`);
+                    const coverPath = path.join(assetDir, `cover.jpg`);
                     const coverSuccess = await downloadFile(coverUrl, coverPath);
                     if (coverSuccess) {
                         result.cover_local_path = coverPath;
@@ -239,6 +238,7 @@ router.get('/api/get_asset_list', async (ctx) => {
             const assetsToProcess = videoData.asset_list.filter(
                 asset => asset.video?.generate_id
             );
+
             console.log(`[Jimeng] 需要处理的视频资源数量: ${assetsToProcess.length}`);
             if (assetsToProcess.length > 0) {
                 console.log(`[Jimeng] 开始处理 ${assetsToProcess.length} 个视频资源...`);
