@@ -192,9 +192,11 @@ const setOptions = async (page, options = {}) => {
   } else {
     console.log(`[setOptions] 当前模式: "${currentText}"，切换到: ${TARGET_MODE}`);
     await page.locator('.lv-select-view').first().click();
-    await page.waitForTimeout(800);
-    const optionXpath = 'xpath=/html/body/div[5]/span/div/div[2]/div/div/li[3]';
-    const option = page.locator(optionXpath);
+    await page.waitForTimeout(500);
+     const popup = page.locator('[class*="lv-select-popup"], .lv-select-popup').filter({ has: page.locator('li') }).first();
+     await popup.waitFor({ state: 'visible', timeout: 15000 });
+    const optionSelector = '#lv-select-popup-1 > div > div > li:nth-child(3)';
+    const option = page.locator(optionSelector);
     await option.waitFor({ state: 'visible', timeout: 30000 });
     await option.click({ force: true });
     await page.waitForTimeout(500);
