@@ -196,7 +196,7 @@ const setOptions = async (page, options = {}) => {
      const popup = page.locator('[class*="lv-select-popup"], .lv-select-popup').filter({ has: page.locator('li') }).first();
      await popup.waitFor({ state: 'visible', timeout: 15000 });
 
-     const option = popup.locator('div > div > li').nth(3);
+     const option = popup.locator('div > div > li').nth(2);
         await option.waitFor({ state: 'visible', timeout: 5000 });
         await option.click({ force: true });
         await page.waitForTimeout(500);
