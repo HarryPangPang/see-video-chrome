@@ -139,13 +139,14 @@ const createErrorMonitor = (page, interval = 500) => {
  * 创建 Toast 错误监控器（用于监控上传图片时的错误提示）
  * @param {Page} page - Playwright 页面对象
  * @param {number} interval - 监控间隔（毫秒），默认300ms
- * @returns {Object} 包含 check, startMonitoring, stopMonitoring, hasError, getError 方法的对象
+ * @returns {Object} 包含 check, startMonitoring, stopMonitoring, hasError, getError, reset 方法的对象
  */
 const createToastErrorMonitor = (page, interval = 300) => {
   // Toast 错误消息的选择器
   const toastMessageSelector = '.lv-message-content';
   let errorMonitorInterval = null;
   let detectedError = null; // 存储检测到的错误信息
+  let lastToastCount = 0; // 记录上次检测到的 toast 数量
 
   // 检查是否出现 Toast 错误
   const check = async () => {
@@ -156,7 +157,8 @@ const createToastErrorMonitor = (page, interval = 300) => {
       const toastMessages = page.locator(toastMessageSelector);
       const count = await toastMessages.count();
 
-      if (count > 0) {
+      // 只检测新出现的 toast（数量增加了）
+      if (count > lastToastCount) {
         // 检查最后一个 toast 消息
         const lastToast = toastMessages.last();
         if (await lastToast.isVisible()) {
@@ -171,6 +173,8 @@ const createToastErrorMonitor = (page, interval = 300) => {
           }
         }
       }
+
+      lastToastCount = count;
     } catch (err) {
       // 忽略检测过程中的异常（如元素不存在）
       // 这些异常不应该中断监控流程
@@ -181,6 +185,14 @@ const createToastErrorMonitor = (page, interval = 300) => {
   const startMonitoring = () => {
     if (errorMonitorInterval) return;
     console.log(`[ToastErrorMonitor] 启动 Toast 错误监控，间隔 ${interval}ms`);
+
+    // 记录当前 toast 数量作为基线
+    page.locator(toastMessageSelector).count().then(count => {
+      lastToastCount = count;
+    }).catch(() => {
+      lastToastCount = 0;
+    });
+
     errorMonitorInterval = setInterval(async () => {
       await check();
     }, interval);
@@ -193,6 +205,14 @@ const createToastErrorMonitor = (page, interval = 300) => {
       errorMonitorInterval = null;
       console.log('[ToastErrorMonitor] 已停止 Toast 错误监控');
     }
+  };
+
+  // 重置监控器状态
+  const reset = () => {
+    stopMonitoring();
+    detectedError = null;
+    lastToastCount = 0;
+    console.log('[ToastErrorMonitor] 已重置监控器状态');
   };
 
   // 检查是否检测到错误
@@ -216,6 +236,7 @@ const createToastErrorMonitor = (page, interval = 300) => {
     check,
     startMonitoring,
     stopMonitoring,
+    reset,
     hasError,
     getError,
     getErrorMessage
@@ -255,19 +276,23 @@ const TARGET_MODE = '视频生成';
 const MODEL_CURRENT_SELECTOR = '#dreamina-ui-configuration-content-wrapper .toolbar-settings-YNMCja > div > div:nth-child(2)';
 // 时长所在节点（工具栏设置区第 5 个子块，用于读当前值并点击打开下拉）
 const DURATION_CURRENT_SELECTOR = '#dreamina-ui-configuration-content-wrapper .toolbar-settings-YNMCja > div > div:nth-child(5)';
+// 参考模式选择器（全能参考 / 首尾帧）
+const FRAME_MODE_SELECTOR = '#dreamina-ui-configuration-content-wrapper .toolbar-settings-YNMCja > div > div.feature-select-VcsuXi > div > div';
 // 即梦配置区内的提示词输入框（主内容区 textarea）
 const PROMPT_TEXTAREA_SELECTOR = '#dreamina-ui-configuration-content-wrapper .main-content-pao8ef textarea';
 // 首帧上传区域（references 下第 1 个 reference group）
 const START_FRAME_CONTAINER = '#dreamina-ui-configuration-content-wrapper .references-vWIzeo > div:nth-child(1)';
 // 尾帧上传区域（references 下 last-frame）
 const END_FRAME_CONTAINER = '#dreamina-ui-configuration-content-wrapper .references-vWIzeo .last-frame-JCr045';
+// 全能参考模式上传区域（支持一次选择多个文件）
+const OMNI_FRAME_CONTAINER = '#dreamina-ui-configuration-content-wrapper .references-vWIzeo > div > div.reference-group-content-ztz9q2 > div > div';
 // 工具栏「生成」按钮（toolbar-actions 下第 2 个 button）
 const GENERATE_BUTTON_SELECTOR = '#dreamina-ui-configuration-content-wrapper .toolbar-actions-DsJHmQ > div:nth-child(2) > button';
 
 const formatDuration = (v) => (v == null ? '' : String(v).endsWith('s') ? String(v) : `${v}s`);
 
 const setOptions = async (page, options = {}) => {
-  const { model, duration, prompt, startFrameUrl, endFrameUrl, startFramePath, endFramePath } = options;
+  const { model, duration, prompt, startFrameUrl, endFrameUrl, startFramePath, endFramePath, frameMode, omniFrameUrls, omniFramePaths } = options;
   const durationStr = formatDuration(duration);
 
   // 如果出现 modal，就点击确认按钮
@@ -387,9 +412,17 @@ const setOptions = async (page, options = {}) => {
     await setPrompt(page, String(prompt).trim());
   }
 
-  // 5. 首帧/尾帧：用地址（优先本地 path，否则用 URL 下载到临时文件后上传，不重复存）
-  if (startFramePath || endFramePath || startFrameUrl || endFrameUrl) {
-    const imagesResult = await setImages(page, { startFrameUrl, endFrameUrl, startFramePath, endFramePath });
+  // 5. 首帧/尾帧/全能参考：用地址（优先本地 path，否则用 URL 下载到临时文件后上传，不重复存）
+  if (startFramePath || endFramePath || startFrameUrl || endFrameUrl || omniFramePaths || omniFrameUrls) {
+    const imagesResult = await setImages(page, {
+      frameMode,
+      startFrameUrl,
+      endFrameUrl,
+      startFramePath,
+      endFramePath,
+      omniFrameUrls,
+      omniFramePaths
+    });
     // 如果图片上传失败，返回错误结果
     if (!imagesResult.success) {
       return { success: false, error: imagesResult.error };
@@ -409,7 +442,7 @@ const setOptions = async (page, options = {}) => {
   const responsePromise = page.waitForResponse(isGenerateApi, { timeout: 30000 }).catch(() => null);
 
   if (await generateBtn.isVisible()) {
-    await generateBtn.click();
+    // await generateBtn.click();
     console.log('[setOptions] 已点击生成按钮');
   }
 
@@ -435,11 +468,11 @@ const setPrompt = async (page, prompt) => {
   console.log('[setPrompt] 已填入提示词，长度:', prompt.length);
 }
 /**
- * 根据传过来的图片地址在即梦页面上选择首帧/尾帧。
+ * 根据传过来的图片地址在即梦页面上选择首帧/尾帧/全能参考。
  * 优先用本地 path（同机时服务端已存 .tmp/projectId），否则用 URL 下载到临时文件后 setInputFiles，用完即删，不重复存。
  * @returns {Promise<{success: boolean, error?: string}>} 返回操作结果
  */
-const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, endFramePath } = {}) => {
+const setImages = async (page, { frameMode, startFrameUrl, endFrameUrl, startFramePath, endFramePath, omniFrameUrls, omniFramePaths } = {}) => {
   // 创建 Toast 错误监控器
   const toastMonitor = createToastErrorMonitor(page, 300);
 
@@ -483,7 +516,8 @@ const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, end
     input = container.locator('input[type="file"]').first();
     await input.waitFor({ state: 'attached', timeout: 5000 }).catch(() => null);
     if ((await input.count()) > 0) {
-      // 启动 Toast 错误监控
+      // 重置并启动 Toast 错误监控
+      toastMonitor.reset();
       toastMonitor.startMonitoring();
 
       await input.setInputFiles(filePath);
@@ -508,6 +542,60 @@ const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, end
   };
 
   try {
+    // 处理 omni 模式（全能参考模式，支持一次选择多张图片）
+    // 注：omniFrameUrls 只用于 API 响应，上传时直接使用 omniFramePaths（本地路径）
+    if (frameMode === 'omni' && omniFramePaths && Array.isArray(omniFramePaths) && omniFramePaths.length > 0) {
+      console.log(`[setImages] Omni 模式：一次上传 ${omniFramePaths.length} 张图片`);
+
+      // 找到 omni 上传容器
+      const container = page.locator(OMNI_FRAME_CONTAINER).first();
+      await container.waitFor({ state: 'visible', timeout: 10000 }).catch(() => null);
+
+      if (!(await container.isVisible())) {
+        console.warn('[setImages] Omni 容器不可见');
+        return { success: false, error: '全能参考上传区域不可见' };
+      }
+
+      // 查找文件输入框
+      let input = container.locator('input[type="file"]').first();
+      if ((await input.count()) === 0) {
+        // 如果找不到输入框，尝试点击上传区域触发
+        const uploadArea = container.locator('[class*="upload"], [class*="drop"], [class*="reference"]').first();
+        await uploadArea.click().catch(() => null);
+        await page.waitForTimeout(500);
+      }
+
+      input = container.locator('input[type="file"]').first();
+      await input.waitFor({ state: 'attached', timeout: 5000 }).catch(() => null);
+
+      if ((await input.count()) > 0) {
+        // 重置并启动 Toast 错误监控
+        toastMonitor.reset();
+        toastMonitor.startMonitoring();
+
+        // 一次性上传所有图片文件
+        await input.setInputFiles(omniFramePaths);
+        console.log(`[setImages] 已选择全能参考图片: ${omniFramePaths.length} 张`);
+
+        // 等待更长时间，因为要处理多张图片
+        await page.waitForTimeout(2000);
+
+        // 停止监控
+        toastMonitor.stopMonitoring();
+
+        // 检查是否有错误
+        if (toastMonitor.hasError()) {
+          const errorMsg = toastMonitor.getErrorMessage();
+          return { success: false, error: errorMsg };
+        }
+
+        return { success: true };
+      } else {
+        return { success: false, error: '未找到 Omni 模式的文件上传输入框' };
+      }
+    }
+
+    // 处理 startEnd 模式（首帧和尾帧）
     const startPath = startFramePath && fs.existsSync(startFramePath)
       ? startFramePath
       : await resolveLocalOrFetch(startFrameUrl, 'start');

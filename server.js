@@ -33,14 +33,27 @@ app.use(bodyParser());
 // 视频生成：接收 server 转发的参数（含本地图片目录 imagesDir），打开 Chrome 访问即梦视频生成页
 router.post('/api/generate', async (ctx) => {
     const body = ctx.request.body || {};
-    const { projectId, creationType, duration, frameMode, model, prompt, ratio, startFrameUrl, endFrameUrl, startFramePath, endFramePath } = body;
-    console.log('[Jimeng] Received generate:', { projectId, creationType, model, ratio, duration, startFrame: !!(startFrameUrl || startFramePath), endFrame: !!(endFrameUrl || endFramePath) });
+    const { projectId, creationType, duration, frameMode, model, prompt, ratio, startFrameUrl, endFrameUrl, startFramePath, endFramePath, omniFrameUrls, omniFramePaths } = body;
+    console.log('[Jimeng] Received generate:', { projectId, creationType, model, ratio, duration, frameMode, startFrame: !!(startFrameUrl || startFramePath), endFrame: !!(endFrameUrl || endFramePath), omniFrames: omniFramePaths?.length || 0 });
 
     try {
         const page = await initBrowserPage();
         await page.goto(JIMENG_VIDEO_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
         console.log('[Jimeng] Opened:', JIMENG_VIDEO_URL);
-        const result = await setOptions(page, { creationType, duration, frameMode, model, prompt, ratio, startFrameUrl, endFrameUrl, startFramePath, endFramePath });
+        const result = await setOptions(page, {
+            creationType,
+            duration,
+            frameMode,
+            model,
+            prompt,
+            ratio,
+            startFrameUrl,
+            endFrameUrl,
+            startFramePath,
+            endFramePath,
+            omniFrameUrls,
+            omniFramePaths
+        });
         await page.close();
 
         // 检查业务结果
