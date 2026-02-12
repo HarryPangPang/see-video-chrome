@@ -40,10 +40,21 @@ router.post('/api/generate', async (ctx) => {
         const page = await initBrowserPage();
         await page.goto(JIMENG_VIDEO_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
         console.log('[Jimeng] Opened:', JIMENG_VIDEO_URL);
-        const generateId = await setOptions(page, { creationType, duration, frameMode, model, prompt, ratio, startFrameUrl, endFrameUrl, startFramePath, endFramePath });
+        const result = await setOptions(page, { creationType, duration, frameMode, model, prompt, ratio, startFrameUrl, endFrameUrl, startFramePath, endFramePath });
         await page.close();
-        ctx.body = { success: true, message: 'Opened Jimeng video page', projectId, generateId: generateId || undefined };
+
+        // 检查业务结果
+        if (!result.success) {
+            // 业务错误：返回 200 状态码，但 success: false
+            ctx.status = 200;
+            ctx.body = { success: false, error: result.error };
+            return;
+        }
+
+        // 成功
+        ctx.body = { success: true, message: 'Opened Jimeng video page', projectId, generateId: result.generateId || undefined };
     } catch (err) {
+        // 系统错误：返回 500 状态码
         console.error('[Jimeng] Error:', err);
         ctx.status = 500;
         ctx.body = { success: false, error: err.message };
@@ -145,13 +156,14 @@ async function processAssets(assets, concurrency = 3, projectid = null) {
                 const videoItem = videoInfo?.origin || videoInfo?.['720p'] || videoInfo?.['480p'];
                 const videoUrl = videoItem?.video_url;
                 const coverUrl = item_list[0]?.video?.cover_url || item_list[0]?.common_attr?.cover_url;
-
+                const errormsg = asset?.video?.fail_starling_message
                 const result = {
                     generate_id: generateId,
                     video_url: videoUrl,
                     video_local_path: null,
                     cover_url: coverUrl,
                     cover_local_path: null,
+                    errormsg: errormsg || null,
                     title: video_gen_inputs.map(i=>i?.prompt).filter(Boolean).join(' ') || '',
                 };
                 console.log(`[processAssets] Processing asset ${generateId}, videoUrl:`, videoUrl, 'coverUrl:', coverUrl);
@@ -201,7 +213,8 @@ async function processAssets(assets, concurrency = 3, projectid = null) {
                             video_url: result.video_url,
                             video_local_path: result.video_local_path,
                             cover_url: result.cover_url,
-                            cover_local_path: result.cover_local_path
+                            cover_local_path: result.cover_local_path,
+                            errormsg: result.errormsg,
                         });
                         console.log(`[processAssets] Saved asset ${generateId} to database`);
                     } catch (dbErr) {

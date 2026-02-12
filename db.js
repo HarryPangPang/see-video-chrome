@@ -40,7 +40,7 @@ async function getDb() {
  * @param {string} params.cover_url - 封面URL
  * @param {string} params.cover_local_path - 封面本地路径
  */
-async function updateVideoGenerationPaths({ generate_id, video_url, video_local_path, cover_url, cover_local_path }) {
+async function updateVideoGenerationPaths({ errormsg, generate_id, video_url, video_local_path, cover_url, cover_local_path }) {
     const db = await getDb();
     const now = Date.now();
 
@@ -60,9 +60,10 @@ async function updateVideoGenerationPaths({ generate_id, video_url, video_local_
                     video_thumbnail = COALESCE(?, video_thumbnail),
                     cover_local_path = COALESCE(?, cover_local_path),
                     updated_at = ?,
+                    errormsg = ?,
                     status = ?
                 WHERE generate_id = ?`,
-                [video_url, video_local_path, cover_url, cover_local_path, now, 'completed', generate_id]
+                [video_url, video_local_path, cover_url, cover_local_path, now,errormsg, 'completed', generate_id]
             );
             console.log(`[DB] Updated video_generations for generate_id: ${generate_id}`);
         } else {

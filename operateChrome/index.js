@@ -135,6 +135,93 @@ const createErrorMonitor = (page, interval = 500) => {
   };
 };
 
+/**
+ * 创建 Toast 错误监控器（用于监控上传图片时的错误提示）
+ * @param {Page} page - Playwright 页面对象
+ * @param {number} interval - 监控间隔（毫秒），默认300ms
+ * @returns {Object} 包含 check, startMonitoring, stopMonitoring, hasError, getError 方法的对象
+ */
+const createToastErrorMonitor = (page, interval = 300) => {
+  // Toast 错误消息的选择器
+  const toastMessageSelector = '.lv-message-content';
+  let errorMonitorInterval = null;
+  let detectedError = null; // 存储检测到的错误信息
+
+  // 检查是否出现 Toast 错误
+  const check = async () => {
+    if (detectedError) return; // 避免重复检测
+
+    try {
+      // 查找所有 toast 消息
+      const toastMessages = page.locator(toastMessageSelector);
+      const count = await toastMessages.count();
+
+      if (count > 0) {
+        // 检查最后一个 toast 消息
+        const lastToast = toastMessages.last();
+        if (await lastToast.isVisible()) {
+          const errorText = (await lastToast.innerText()).trim();
+
+          // 只有当存在错误信息时才记录错误
+          if (errorText) {
+            detectedError = `图片上传错误: ${errorText}`;
+            console.log('[ToastErrorMonitor] 检测到错误提示:', errorText);
+            // 停止监控
+            stopMonitoring();
+          }
+        }
+      }
+    } catch (err) {
+      // 忽略检测过程中的异常（如元素不存在）
+      // 这些异常不应该中断监控流程
+    }
+  };
+
+  // 启动持续错误监控
+  const startMonitoring = () => {
+    if (errorMonitorInterval) return;
+    console.log(`[ToastErrorMonitor] 启动 Toast 错误监控，间隔 ${interval}ms`);
+    errorMonitorInterval = setInterval(async () => {
+      await check();
+    }, interval);
+  };
+
+  // 停止错误监控
+  const stopMonitoring = () => {
+    if (errorMonitorInterval) {
+      clearInterval(errorMonitorInterval);
+      errorMonitorInterval = null;
+      console.log('[ToastErrorMonitor] 已停止 Toast 错误监控');
+    }
+  };
+
+  // 检查是否检测到错误
+  const hasError = () => {
+    return detectedError !== null;
+  };
+
+  // 获取错误信息（如果有的话会抛出异常）
+  const getError = () => {
+    if (detectedError) {
+      throw new Error(detectedError);
+    }
+  };
+
+  // 获取错误信息（不抛出异常）
+  const getErrorMessage = () => {
+    return detectedError;
+  };
+
+  return {
+    check,
+    startMonitoring,
+    stopMonitoring,
+    hasError,
+    getError,
+    getErrorMessage
+  };
+};
+
 const initBrowserPage = async () => {
   // 如果浏览器上下文已经存在，直接返回一个新的页面
   if (browserContext) {
@@ -182,6 +269,34 @@ const formatDuration = (v) => (v == null ? '' : String(v).endsWith('s') ? String
 const setOptions = async (page, options = {}) => {
   const { model, duration, prompt, startFrameUrl, endFrameUrl, startFramePath, endFramePath } = options;
   const durationStr = formatDuration(duration);
+
+  // 如果出现 modal，就点击确认按钮
+  try {
+    const modalWrapper = page.locator('.lv-modal-wrapper').first();
+    // 等待 modal 出现
+    const isModalVisible = await modalWrapper.isVisible().catch(() => false);
+    if (isModalVisible) {
+      console.log('[setOptions] 检测到 modal 弹窗，尝试点击确认按钮');
+      // 等待 modal 内容加载完成
+      await page.waitForTimeout(300);
+
+      // 尝试多种选择器来找到确认按钮
+      const confirmButton = modalWrapper.locator('.lv-modal-content .lv-btn-primary').first();
+
+      // 等待按钮出现并可交互
+      await confirmButton.waitFor({ state: 'visible', timeout: 3000 }).catch(() => null);
+
+      if (await confirmButton.isVisible().catch(() => false)) {
+        await confirmButton.click({ force: true });
+        await page.waitForTimeout(800);
+        console.log('[setOptions] 已点击 modal 确认按钮');
+      } else {
+        console.warn('[setOptions] modal 按钮不可见');
+      }
+    }
+  } catch (err) {
+    console.warn('[setOptions] 检测/点击 modal 按钮失败:', err.message);
+  }
 
   // 1. 模式：先判断是否为「视频生成」，不是则点击并选择
   const valueEl = page.locator('.lv-select-view-value').first();
@@ -274,7 +389,11 @@ const setOptions = async (page, options = {}) => {
 
   // 5. 首帧/尾帧：用地址（优先本地 path，否则用 URL 下载到临时文件后上传，不重复存）
   if (startFramePath || endFramePath || startFrameUrl || endFrameUrl) {
-    await setImages(page, { startFrameUrl, endFrameUrl, startFramePath, endFramePath });
+    const imagesResult = await setImages(page, { startFrameUrl, endFrameUrl, startFramePath, endFramePath });
+    // 如果图片上传失败，返回错误结果
+    if (!imagesResult.success) {
+      return { success: false, error: imagesResult.error };
+    }
   }
 
   // 6. 等 200ms 后点击「生成」按钮，并监听生成接口响应以拿到 generate_id（见 jimeng.md 生成接口 / 生成结果返回）
@@ -305,7 +424,7 @@ const setOptions = async (page, options = {}) => {
     }
   }
 
-  return generateId;
+  return { success: true, generateId };
 }
 
 const setPrompt = async (page, prompt) => {
@@ -318,8 +437,12 @@ const setPrompt = async (page, prompt) => {
 /**
  * 根据传过来的图片地址在即梦页面上选择首帧/尾帧。
  * 优先用本地 path（同机时服务端已存 .tmp/projectId），否则用 URL 下载到临时文件后 setInputFiles，用完即删，不重复存。
+ * @returns {Promise<{success: boolean, error?: string}>} 返回操作结果
  */
 const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, endFramePath } = {}) => {
+  // 创建 Toast 错误监控器
+  const toastMonitor = createToastErrorMonitor(page, 300);
+
   const resolveLocalOrFetch = async (pathOrUrl, label) => {
     if (pathOrUrl && fs.existsSync(pathOrUrl)) return pathOrUrl;
     if (!pathOrUrl) return null;
@@ -346,11 +469,11 @@ const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, end
     }
   };
 
-  const setFileInContainer = async (containerSelector, filePath, isTemp) => {
-    if (!filePath) return;
+  const setFileInContainer = async (containerSelector, filePath, isTemp, frameType) => {
+    if (!filePath) return { success: true };
     const container = page.locator(containerSelector).first();
     await container.waitFor({ state: 'visible', timeout: 10000 }).catch(() => null);
-    if (!(await container.isVisible())) return;
+    if (!(await container.isVisible())) return { success: true };
     let input = container.locator('input[type="file"]').first();
     if ((await input.count()) === 0) {
       const uploadArea = container.locator('[class*="upload"], [class*="drop"], [class*="reference"]').first();
@@ -360,23 +483,57 @@ const setImages = async (page, { startFrameUrl, endFrameUrl, startFramePath, end
     input = container.locator('input[type="file"]').first();
     await input.waitFor({ state: 'attached', timeout: 5000 }).catch(() => null);
     if ((await input.count()) > 0) {
+      // 启动 Toast 错误监控
+      toastMonitor.startMonitoring();
+
       await input.setInputFiles(filePath);
-      console.log('[setImages] 已选择图片:', filePath);
+      console.log(`[setImages] 已选择${frameType}:`, filePath);
+
+      // 等待一段时间，让页面有时间显示错误 toast
+      await page.waitForTimeout(1500);
+
+      // 停止监控
+      toastMonitor.stopMonitoring();
+
+      // 检查是否有错误，如果有则返回错误
+      if (toastMonitor.hasError()) {
+        const errorMsg = toastMonitor.getErrorMessage();
+        return { success: false, error: errorMsg };
+      }
     }
     if (isTemp && fs.existsSync(filePath)) {
       try { fs.unlinkSync(filePath); } catch (_) {}
     }
+    return { success: true };
   };
 
-  const startPath = startFramePath && fs.existsSync(startFramePath)
-    ? startFramePath
-    : await resolveLocalOrFetch(startFrameUrl, 'start');
-  const endPath = endFramePath && fs.existsSync(endFramePath)
-    ? endFramePath
-    : await resolveLocalOrFetch(endFrameUrl, 'end');
+  try {
+    const startPath = startFramePath && fs.existsSync(startFramePath)
+      ? startFramePath
+      : await resolveLocalOrFetch(startFrameUrl, 'start');
+    const endPath = endFramePath && fs.existsSync(endFramePath)
+      ? endFramePath
+      : await resolveLocalOrFetch(endFrameUrl, 'end');
 
-  await setFileInContainer(START_FRAME_CONTAINER, startPath, !!startFrameUrl && !startFramePath);
-  await setFileInContainer(END_FRAME_CONTAINER, endPath, !!endFrameUrl && !endFramePath);
+    const startResult = await setFileInContainer(START_FRAME_CONTAINER, startPath, !!startFrameUrl && !startFramePath, '首帧');
+    if (!startResult.success) {
+      toastMonitor.stopMonitoring();
+      return startResult; // 返回错误结果
+    }
+
+    const endResult = await setFileInContainer(END_FRAME_CONTAINER, endPath, !!endFrameUrl && !endFramePath, '尾帧');
+    if (!endResult.success) {
+      toastMonitor.stopMonitoring();
+      return endResult; // 返回错误结果
+    }
+
+    return { success: true };
+  } catch (err) {
+    // 确保停止监控
+    toastMonitor.stopMonitoring();
+    // 系统错误仍然抛出
+    throw err;
+  }
 }
 
 /**
