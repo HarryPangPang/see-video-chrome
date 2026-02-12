@@ -268,14 +268,35 @@ const setOptions = async (page, options = {}) => {
     await setImages(page, { startFramePath, endFramePath });
   }
 
-  // 6. 等 200ms 后点击「生成」按钮
+  // 6. 等 200ms 后点击「生成」按钮，并监听生成接口响应以拿到 generate_id（见 jimeng.md 生成接口 / 生成结果返回）
   await page.waitForTimeout(200);
   const generateBtn = page.locator(GENERATE_BUTTON_SELECTOR).first();
   await generateBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
+
+  let generateId = null;
+  const isGenerateApi = (res) => {
+    const u = res.url();
+    return u.includes('aigc_draft/generate') && res.request().method() === 'POST';
+  };
+  const responsePromise = page.waitForResponse(isGenerateApi, { timeout: 30000 }).catch(() => null);
+
   if (await generateBtn.isVisible()) {
     await generateBtn.click();
     console.log('[setOptions] 已点击生成按钮');
   }
+
+  const response = await responsePromise;
+  if (response && response.ok()) {
+    try {
+      const json = await response.json();
+      generateId = json?.data?.aigc_data?.generate_id || null;
+      if (generateId) console.log('[setOptions] 生成接口返回 generate_id:', generateId);
+    } catch (e) {
+      console.warn('[setOptions] 解析生成接口响应失败', e.message);
+    }
+  }
+
+  return generateId;
 }
 
 const setPrompt = async (page, prompt) => {

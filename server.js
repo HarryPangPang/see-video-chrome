@@ -36,8 +36,8 @@ router.post('/api/generate', async (ctx) => {
         const page = await initBrowserPage();
         await page.goto(JIMENG_VIDEO_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
         console.log('[Jimeng] Opened:', JIMENG_VIDEO_URL);
-        await setOptions(page, { creationType, duration, endFrame, frameMode, model, prompt, ratio, startFrame, imagesDir, startFramePath, endFramePath });
-        ctx.body = { success: true, message: 'Opened Jimeng video page', projectId };
+        const generateId = await setOptions(page, { creationType, duration, endFrame, frameMode, model, prompt, ratio, startFrame, imagesDir, startFramePath, endFramePath });
+        ctx.body = { success: true, message: 'Opened Jimeng video page', projectId, generateId: generateId || undefined };
     } catch (err) {
         console.error('[Jimeng] Error:', err);
         ctx.status = 500;
