@@ -281,7 +281,7 @@ const setOptions = async (page, options = {}) => {
   const responsePromise = page.waitForResponse(isGenerateApi, { timeout: 30000 }).catch(() => null);
 
   if (await generateBtn.isVisible()) {
-    // await generateBtn.click();
+    await generateBtn.click();
     console.log('[setOptions] 已点击生成按钮');
   }
 
