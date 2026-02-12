@@ -195,11 +195,18 @@ const setOptions = async (page, options = {}) => {
     await page.waitForTimeout(500);
      const popup = page.locator('[class*="lv-select-popup"], .lv-select-popup').filter({ has: page.locator('li') }).first();
      await popup.waitFor({ state: 'visible', timeout: 15000 });
-    const optionSelector = '#lv-select-popup-1 > div > div > li:nth-child(3)';
-    const option = page.locator(optionSelector);
-    await option.waitFor({ state: 'visible', timeout: 30000 });
-    await option.click({ force: true });
-    await page.waitForTimeout(500);
+
+     const option = popup.locator('div > div > li').nth(3);
+        await option.waitFor({ state: 'visible', timeout: 5000 });
+        await option.click({ force: true });
+        await page.waitForTimeout(500);
+
+
+    // const optionSelector = '#lv-select-popup-1 > div > div > li:nth-child(3)';
+    // const option = page.locator(optionSelector);
+    // await option.waitFor({ state: 'visible', timeout: 30000 });
+    // await option.click({ force: true });
+    // await page.waitForTimeout(500);
     console.log('[setOptions] 已选择视频生成');
   }
 
