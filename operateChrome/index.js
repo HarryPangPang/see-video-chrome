@@ -166,12 +166,16 @@ const TARGET_MODE = '视频生成';
 const MODEL_CURRENT_SELECTOR = '#dreamina-ui-configuration-content-wrapper .toolbar-settings-YNMCja > div > div:nth-child(2)';
 // 时长所在节点（工具栏设置区第 5 个子块，用于读当前值并点击打开下拉）
 const DURATION_CURRENT_SELECTOR = '#dreamina-ui-configuration-content-wrapper .toolbar-settings-YNMCja > div > div:nth-child(5)';
+// 即梦配置区内的提示词输入框（主内容区 textarea）
+const PROMPT_TEXTAREA_SELECTOR = '#dreamina-ui-configuration-content-wrapper .main-content-pao8ef textarea';
 
 const formatDuration = (v) => (v == null ? '' : String(v).endsWith('s') ? String(v) : `${v}s`);
 
 const setOptions = async (page, options = {}) => {
-  const { model, duration } = options;
+  const { model, duration, imagesDir, prompt } = options;
   const durationStr = formatDuration(duration);
+  // imagesDir: 服务端保存的本地目录路径 .tmp/projectId，内有 start.* / end.* 可供上传
+  if (imagesDir) console.log('[setOptions] imagesDir:', imagesDir);
 
   // 1. 模式：先判断是否为「视频生成」，不是则点击并选择
   const valueEl = page.locator('.lv-select-view-value').first();
@@ -247,11 +251,25 @@ const setOptions = async (page, options = {}) => {
       console.log('[setOptions] 当前已是时长:', durationStr);
     }
   }
+
+  // 4. 提示词：填入配置区主内容 textarea（上传过来的 prompt）
+  if (prompt != null && String(prompt).trim()) {
+    await setPrompt(page, String(prompt).trim());
+  }
 }
 
-
+const setPrompt = async (page, prompt) => {
+  const textarea = page.locator(PROMPT_TEXTAREA_SELECTOR).first();
+  await textarea.waitFor({ state: 'visible', timeout: 15000 });
+  await textarea.fill('');
+  await textarea.fill(prompt);
+  console.log('[setPrompt] 已填入提示词，长度:', prompt.length);
+}
+const setImages = async (page) => {
+}
 module.exports = {
   initBrowserPage: initBrowserPage,
   setOptions: setOptions,
-
+  setPrompt: setPrompt,
+  setImages
 }
