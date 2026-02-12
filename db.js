@@ -59,7 +59,7 @@ async function updateVideoGenerationPaths({ generate_id, video_url, video_local_
                     video_local_path = COALESCE(?, video_local_path),
                     video_thumbnail = COALESCE(?, video_thumbnail),
                     cover_local_path = COALESCE(?, cover_local_path),
-                    updated_at = ?
+                    updated_at = ?,
                     status = ?
                 WHERE generate_id = ?`,
                 [video_url, video_local_path, cover_url, cover_local_path, now, 'completed', generate_id]
