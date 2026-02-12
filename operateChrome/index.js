@@ -168,11 +168,17 @@ const MODEL_CURRENT_SELECTOR = '#dreamina-ui-configuration-content-wrapper .tool
 const DURATION_CURRENT_SELECTOR = '#dreamina-ui-configuration-content-wrapper .toolbar-settings-YNMCja > div > div:nth-child(5)';
 // 即梦配置区内的提示词输入框（主内容区 textarea）
 const PROMPT_TEXTAREA_SELECTOR = '#dreamina-ui-configuration-content-wrapper .main-content-pao8ef textarea';
+// 首帧上传区域（references 下第 1 个 reference group）
+const START_FRAME_CONTAINER = '#dreamina-ui-configuration-content-wrapper .references-vWIzeo > div:nth-child(1)';
+// 尾帧上传区域（references 下 last-frame）
+const END_FRAME_CONTAINER = '#dreamina-ui-configuration-content-wrapper .references-vWIzeo .last-frame-JCr045';
+// 工具栏「生成」按钮（toolbar-actions 下第 2 个 button）
+const GENERATE_BUTTON_SELECTOR = '#dreamina-ui-configuration-content-wrapper .toolbar-actions-DsJHmQ > div:nth-child(2) > button';
 
 const formatDuration = (v) => (v == null ? '' : String(v).endsWith('s') ? String(v) : `${v}s`);
 
 const setOptions = async (page, options = {}) => {
-  const { model, duration, imagesDir, prompt } = options;
+  const { model, duration, imagesDir, prompt, startFramePath, endFramePath } = options;
   const durationStr = formatDuration(duration);
   // imagesDir: 服务端保存的本地目录路径 .tmp/projectId，内有 start.* / end.* 可供上传
   if (imagesDir) console.log('[setOptions] imagesDir:', imagesDir);
@@ -256,6 +262,20 @@ const setOptions = async (page, options = {}) => {
   if (prompt != null && String(prompt).trim()) {
     await setPrompt(page, String(prompt).trim());
   }
+
+  // 5. 首帧/尾帧：用服务端下发的本地路径通过 input[file] 选图
+  if (startFramePath || endFramePath) {
+    await setImages(page, { startFramePath, endFramePath });
+  }
+
+  // 6. 等 200ms 后点击「生成」按钮
+  await page.waitForTimeout(200);
+  const generateBtn = page.locator(GENERATE_BUTTON_SELECTOR).first();
+  await generateBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
+  if (await generateBtn.isVisible()) {
+    await generateBtn.click();
+    console.log('[setOptions] 已点击生成按钮');
+  }
 }
 
 const setPrompt = async (page, prompt) => {
@@ -265,7 +285,36 @@ const setPrompt = async (page, prompt) => {
   await textarea.fill(prompt);
   console.log('[setPrompt] 已填入提示词，长度:', prompt.length);
 }
-const setImages = async (page) => {
+/**
+ * 根据传过来的图片路径在即梦页面上选择首帧/尾帧。
+ * 使用本地 path：服务端已把 base64 存到 .tmp/projectId，传 startFramePath/endFramePath，Playwright setInputFiles 直接传路径即可。
+ */
+const setImages = async (page, { startFramePath, endFramePath } = {}) => {
+  const setFileInContainer = async (containerSelector, filePath) => {
+    if (!filePath || !fs.existsSync(filePath)) {
+      console.log('[setImages] 跳过，文件不存在:', filePath);
+      return;
+    }
+    const container = page.locator(containerSelector).first();
+    await container.waitFor({ state: 'visible', timeout: 10000 }).catch(() => null);
+    if (!(await container.isVisible())) return;
+    const fileInput = container.locator('input[type="file"]').first();
+    const count = await fileInput.count();
+    if (count === 0) {
+      const uploadArea = container.locator('[class*="upload"], [class*="drop"], [class*="reference"]').first();
+      await uploadArea.click().catch(() => null);
+      await page.waitForTimeout(500);
+    }
+    const input = container.locator('input[type="file"]').first();
+    await input.waitFor({ state: 'attached', timeout: 5000 }).catch(() => null);
+    if (await input.count() > 0) {
+      await input.setInputFiles(filePath);
+      console.log('[setImages] 已选择图片:', filePath);
+    }
+  };
+
+  if (startFramePath) await setFileInContainer(START_FRAME_CONTAINER, startFramePath);
+  if (endFramePath) await setFileInContainer(END_FRAME_CONTAINER, endFramePath);
 }
 module.exports = {
   initBrowserPage: initBrowserPage,
