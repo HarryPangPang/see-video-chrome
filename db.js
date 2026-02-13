@@ -109,7 +109,10 @@ async function handleGenerationFailure({ generate_id, errormsg, video_url, cover
             'SELECT id, user_id FROM video_generations WHERE generate_id = ?',
             generate_id
         );
-
+        // if(existing.error_message) {
+        //     console.log(`[DB] 生成ID ${generate_id} 已有错误消息，跳过重复处理`);
+        //     return { success: true, alreadyHandled: true };
+        // }
         if (!existing) {
             console.warn(`[DB] 未找到 generate_id ${generate_id} 对应的记录`);
             return { success: false, error: '记录不存在' };
@@ -172,24 +175,23 @@ async function refundCredits(projectId, amount = 1, reason = '生成失败') {
         }
 
         // 幂等性检查：如果已经退款过，直接返回
-        if (record.refunded === 1) {
+        if (record.refunded == 1) {
             console.log(`[DB] 项目 ${projectId} 已经退款过，跳过重复退款`);
             return { success: true, userId: record.user_id, refundedAmount: 0, alreadyRefunded: true };
         }
 
         const userId = record.user_id;
-
+        // 标记生成记录为已退款
+        await db.run(
+            'UPDATE video_generations SET refunded = 1 WHERE id = ?',
+            [record.id]
+        );
         // 增加用户积分
         await db.run(
             'UPDATE users SET credits = credits + ? WHERE id = ?',
             [amount, userId]
         );
 
-        // 标记生成记录为已退款
-        await db.run(
-            'UPDATE video_generations SET refunded = 1 WHERE id = ?',
-            [projectId]
-        );
 
         console.log(`[DB] 已为用户 ${userId} 退还 ${amount} 积分，原因: ${reason}`);
 
@@ -197,7 +199,7 @@ async function refundCredits(projectId, amount = 1, reason = '生成失败') {
         try {
             const { v4: uuidv4 } = require('uuid');
             await db.run(
-                `INSERT INTO credit_transactions (id, user_id, amount, type, reason, created_at)
+                `INSERT INTO credits_transactions (id, user_id, amount, type, reason, created_at)
                  VALUES (?, ?, ?, ?, ?, ?)`,
                 [uuidv4(), userId, amount, 'refund', reason, now]
             );
