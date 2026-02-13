@@ -285,6 +285,38 @@ const setOptions = async (page, options = {}) => {
     // await page.waitForTimeout(500);
     console.log('[setOptions] 已选择视频生成');
   }
+    // 3.5. 参考模式：从工具栏设置区获取当前参考模式，不一致则点击→等弹窗→按位置点 li
+  if (frameMode) {
+    const frameModeEl = page.locator(FRAME_MODE_SELECTOR).first();
+    let currentFrameMode = '';
+    try {
+      // 尝试获取当前参考模式文本
+      currentFrameMode = (await frameModeEl.innerText()).trim();
+    } catch {
+      currentFrameMode = '';
+    }
+    const frameModeText = frameModeMap[frameMode]; // 如 '全能参考' 或 '首尾帧'
+    const frameModePos = frameModePosition[frameMode]; // 1 或 2
+    console.log('[setOptions] 当前参考模式:', currentFrameMode, '要选择:', frameModeText);
+
+    if (currentFrameMode !== frameModeText) {
+      await frameModeEl.click();
+      await page.waitForTimeout(800);
+      // 等待任意可见的 lv-select 弹窗（弹层都一样）
+      const frameModePopup = page.locator('[class*="lv-select-popup"], .lv-select-popup').filter({ has: page.locator('li') }).first();
+      await frameModePopup.waitFor({ state: 'visible', timeout: 15000 });
+
+      if (frameModePos != null && frameModePos >= 1) {
+        const option = frameModePopup.locator('div > div > li').nth(frameModePos - 1);
+        await option.waitFor({ state: 'visible', timeout: 5000 });
+        await option.click({ force: true });
+        await page.waitForTimeout(500); // 等待页面重新渲染
+      }
+      console.log('[setOptions] 已选择参考模式:', frameModeText);
+    } else {
+      console.log('[setOptions] 当前已是参考模式:', frameModeText);
+    }
+  }
   // 5. 首帧/尾帧/全能参考：用地址（优先本地 path，否则用 URL 下载到临时文件后上传，不重复存）
   if (startFramePath || endFramePath || startFrameUrl || endFrameUrl || omniFramePaths || omniFrameUrls) {
     const imagesResult = await setImages(page, {
@@ -326,38 +358,7 @@ const setOptions = async (page, options = {}) => {
       console.log('[setOptions] 当前已是模型:', modelText);
     }
   }
-  // 3.5. 参考模式：从工具栏设置区获取当前参考模式，不一致则点击→等弹窗→按位置点 li
-  if (frameMode) {
-    const frameModeEl = page.locator(FRAME_MODE_SELECTOR).first();
-    let currentFrameMode = '';
-    try {
-      // 尝试获取当前参考模式文本
-      currentFrameMode = (await frameModeEl.innerText()).trim();
-    } catch {
-      currentFrameMode = '';
-    }
-    const frameModeText = frameModeMap[frameMode]; // 如 '全能参考' 或 '首尾帧'
-    const frameModePos = frameModePosition[frameMode]; // 1 或 2
-    console.log('[setOptions] 当前参考模式:', currentFrameMode, '要选择:', frameModeText);
 
-    if (currentFrameMode !== frameModeText) {
-      await frameModeEl.click();
-      await page.waitForTimeout(800);
-      // 等待任意可见的 lv-select 弹窗（弹层都一样）
-      const frameModePopup = page.locator('[class*="lv-select-popup"], .lv-select-popup').filter({ has: page.locator('li') }).first();
-      await frameModePopup.waitFor({ state: 'visible', timeout: 15000 });
-
-      if (frameModePos != null && frameModePos >= 1) {
-        const option = frameModePopup.locator('div > div > li').nth(frameModePos - 1);
-        await option.waitFor({ state: 'visible', timeout: 5000 });
-        await option.click({ force: true });
-        await page.waitForTimeout(500); // 等待页面重新渲染
-      }
-      console.log('[setOptions] 已选择参考模式:', frameModeText);
-    } else {
-      console.log('[setOptions] 当前已是参考模式:', frameModeText);
-    }
-  }
 
   // 3. 时长：从工具栏设置区第 5 个子块取当前时长，不一致则点击该块→等弹窗→按文案点 li
   if (durationStr) {
