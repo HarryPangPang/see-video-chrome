@@ -19,8 +19,8 @@ const ModelMap = {
   '30': '视频 3.0',
 }
 const ModelPosition = {
-  'seedance20': 1,
-  'seedance20fast': 2,
+  'seedance20fast': 1,
+  'seedance20': 2,
   '35pro': 3,
   '30pro': 4,
   '30fast': 5,
@@ -54,7 +54,14 @@ const durationPosition = {
   '14s': 11,
   '15s': 12,
 }
-
+const frameModeMap = {
+  'startEnd': '首尾帧',
+  'omni': '全能参考',
+}
+const frameModePosition = {
+  'startEnd': 2,
+  'omni': 1,
+}
 // setInterval(() => {
 //   if(tasks === 0 && browserContext){
 //     browserContext.close()
@@ -63,77 +70,6 @@ const durationPosition = {
 // }, 1000 * 60 * 5)
 
 
-/**
- * 创建错误监控器
- * @param {Page} page - Playwright 页面对象
- * @param {number} interval - 监控间隔（毫秒），默认500ms
- * @returns {Object} 包含 check, startMonitoring, stopMonitoring 方法的对象
- */
-const createErrorMonitor = (page, interval = 500) => {
-  const errorSelector = '.error-container';
-  let errorMonitorInterval = null;
-  let errorDetected = false;
-
-  // 检查是否出现错误
-  const check = async () => {
-    if (errorDetected) return; // 避免重复检测
-
-    try {
-      const errorContainer = page.locator(errorSelector).first();
-      if (await errorContainer.isVisible()) {
-        errorDetected = true;
-        // 尝试获取错误文本
-        const errorTitle = page.locator('.error-title').first();
-        let errorText = 'An internal error occurred.';
-
-        if (await errorTitle.isVisible()) {
-          const text = (await errorTitle.innerText()).trim();
-          if (text) errorText = text;
-        }
-
-        // 停止监控
-        stopMonitoring();
-
-        throw new Error(`AI Studio Error: ${errorText}`);
-      }
-    } catch (err) {
-      // 如果是我们抛出的错误，继续抛出
-      if (err instanceof Error && err.message.startsWith('AI Studio Error:')) {
-        throw err;
-      }
-      // 其他错误（如元素不存在）忽略
-    }
-  };
-
-  // 启动持续错误监控
-  const startMonitoring = () => {
-    if (errorMonitorInterval) return;
-    console.log(`[ErrorMonitor] 启动错误监控，间隔 ${interval}ms`);
-    errorMonitorInterval = setInterval(async () => {
-      try {
-        await check();
-      } catch (err) {
-        // 错误会在主流程中被捕获
-        stopMonitoring();
-      }
-    }, interval);
-  };
-
-  // 停止错误监控
-  const stopMonitoring = () => {
-    if (errorMonitorInterval) {
-      clearInterval(errorMonitorInterval);
-      errorMonitorInterval = null;
-      console.log('[ErrorMonitor] 已停止错误监控');
-    }
-  };
-
-  return {
-    check,
-    startMonitoring,
-    stopMonitoring
-  };
-};
 
 /**
  * 创建 Toast 错误监控器（用于监控上传图片时的错误提示）
@@ -374,6 +310,38 @@ const setOptions = async (page, options = {}) => {
       console.log('[setOptions] 当前已是模型:', modelText);
     }
   }
+  // 3.5. 参考模式：从工具栏设置区获取当前参考模式，不一致则点击→等弹窗→按位置点 li
+  if (frameMode) {
+    const frameModeEl = page.locator(FRAME_MODE_SELECTOR).first();
+    let currentFrameMode = '';
+    try {
+      // 尝试获取当前参考模式文本
+      currentFrameMode = (await frameModeEl.innerText()).trim();
+    } catch {
+      currentFrameMode = '';
+    }
+    const frameModeText = frameModeMap[frameMode]; // 如 '全能参考' 或 '首尾帧'
+    const frameModePos = frameModePosition[frameMode]; // 1 或 2
+    console.log('[setOptions] 当前参考模式:', currentFrameMode, '要选择:', frameModeText);
+
+    if (currentFrameMode !== frameModeText) {
+      await frameModeEl.click();
+      await page.waitForTimeout(800);
+      // 等待任意可见的 lv-select 弹窗（弹层都一样）
+      const frameModePopup = page.locator('[class*="lv-select-popup"], .lv-select-popup').filter({ has: page.locator('li') }).first();
+      await frameModePopup.waitFor({ state: 'visible', timeout: 15000 });
+
+      if (frameModePos != null && frameModePos >= 1) {
+        const option = frameModePopup.locator('div > div > li').nth(frameModePos - 1);
+        await option.waitFor({ state: 'visible', timeout: 5000 });
+        await option.click({ force: true });
+        await page.waitForTimeout(500); // 等待页面重新渲染
+      }
+      console.log('[setOptions] 已选择参考模式:', frameModeText);
+    } else {
+      console.log('[setOptions] 当前已是参考模式:', frameModeText);
+    }
+  }
 
   // 3. 时长：从工具栏设置区第 5 个子块取当前时长，不一致则点击该块→等弹窗→按文案点 li
   if (durationStr) {
@@ -409,7 +377,13 @@ const setOptions = async (page, options = {}) => {
 
   // 4. 提示词：填入配置区主内容 textarea（上传过来的 prompt）
   if (prompt != null && String(prompt).trim()) {
-    await setPrompt(page, String(prompt).trim());
+    if(frameMode === 'omni'){
+          await setOmniPrompt(page, String(prompt).trim());
+    }
+    else{
+          await setPrompt(page, String(prompt).trim());
+
+    }
   }
 
   // 5. 首帧/尾帧/全能参考：用地址（优先本地 path，否则用 URL 下载到临时文件后上传，不重复存）
@@ -459,7 +433,65 @@ const setOptions = async (page, options = {}) => {
 
   return { success: true, generateId };
 }
+const setOmniPrompt = async (page, prompt) => {
+  console.log('[setOmniPrompt] 开始填写全能参考提示词，长度:', prompt.length);
 
+  // 等待页面稳定
+  await page.waitForTimeout(1000);
+
+  // 富文本编辑器选择器（简化版，使用类选择器）
+  const editorSelector = '#dreamina-ui-configuration-content-wrapper .prompt-editor-E3Iuyy > div';
+
+  // 尝试多次，因为可能处于过渡状态
+  let success = false;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      console.log(`[setOmniPrompt] 尝试 ${attempt + 1}/5`);
+
+      const editor = page.locator(editorSelector).first();
+
+      // 等待编辑器元素存在
+      await editor.waitFor({ state: 'attached', timeout: 5000 });
+
+      // 点击聚焦
+      await editor.click({ force: true, timeout: 3000 });
+      console.log('[setOmniPrompt] 已点击编辑器聚焦');
+      await page.waitForTimeout(300);
+
+      // 清空内容（Ctrl/Cmd+A 然后 Delete）
+      await page.keyboard.press('ControlOrMeta+A');
+      await page.waitForTimeout(100);
+      await page.keyboard.press('Backspace');
+      await page.waitForTimeout(200);
+
+      // 输入新内容
+      await page.keyboard.type(prompt, { delay: 10 });
+      console.log('[setOmniPrompt] 已输入文字');
+      await page.waitForTimeout(300);
+
+      // 验证内容是否输入成功
+      const content = await editor.innerText().catch(() => '');
+      console.log(`[setOmniPrompt] 当前内容长度: ${content.length}, 期望长度: ${prompt.length}`);
+
+      if (content.trim().length > 0) {
+        console.log('[setOmniPrompt] 成功填入提示词');
+        success = true;
+        break;
+      } else {
+        console.log('[setOmniPrompt] 内容验证失败，重试');
+      }
+    } catch (e) {
+      console.log(`[setOmniPrompt] 尝试 ${attempt + 1}/5 失败:`, e.message);
+      if (attempt < 4) {
+        await page.waitForTimeout(1500);
+      }
+    }
+  }
+
+  if (!success) {
+    throw new Error('[setOmniPrompt] 多次尝试后仍无法填入提示词');
+  }
+} 
 const setPrompt = async (page, prompt) => {
   const textarea = page.locator(PROMPT_TEXTAREA_SELECTOR).first();
   await textarea.waitFor({ state: 'visible', timeout: 15000 });
