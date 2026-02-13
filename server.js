@@ -13,7 +13,7 @@ const {
     getVideoList,
 } = require('./operateChrome/index');
 const { SERVER_URL, JIMENG_VIDEO_URL } = require('./constant');
-const { updateVideoGenerationPaths } = require('./db');
+const { updateVideoGenerationPaths, handleGenerationFailure } = require('./db');
 
 // 生成内部服务认证 token（固定的虚拟 token）
 const INTERNAL_SERVICE_TOKEN = 'internal-service-proxy-2024-secret-token-xyz';
@@ -219,7 +219,24 @@ async function processAssets(assets, concurrency = 3, projectid = null) {
                 }
 
                 // 保存到数据库（直接连接数据库）
-                if (result.video_local_path || result.cover_local_path) {
+                if (result.errormsg) {
+                    // 如果有错误消息，使用专门的失败处理函数
+                    try {
+                        const failureResult = await handleGenerationFailure({
+                            generate_id: generateId,
+                            errormsg: result.errormsg,
+                            video_url: result.video_url,
+                            cover_url: result.cover_url,
+                        });
+                        console.log(`[processAssets] 处理生成失败 ${generateId}:`, failureResult);
+                        if (failureResult.refunded) {
+                            console.log(`[processAssets] ✅ 已退还 ${failureResult.refundedAmount} 积分给用户 ${failureResult.userId}`);
+                        }
+                    } catch (dbErr) {
+                        console.error(`[processAssets] Failed to handle generation failure for ${generateId}:`, dbErr.message);
+                    }
+                } else if (result.video_local_path || result.cover_local_path) {
+                    // 正常情况，更新视频路径
                     try {
                         await updateVideoGenerationPaths({
                             generate_id: generateId,
@@ -227,7 +244,6 @@ async function processAssets(assets, concurrency = 3, projectid = null) {
                             video_local_path: result.video_local_path,
                             cover_url: result.cover_url,
                             cover_local_path: result.cover_local_path,
-                            errormsg: result.errormsg,
                         });
                         console.log(`[processAssets] Saved asset ${generateId} to database`);
                     } catch (dbErr) {
