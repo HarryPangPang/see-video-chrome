@@ -160,9 +160,9 @@ async function refundCredits(projectId, amount = 1, reason = '生成失败') {
     const now = Date.now();
 
     try {
-        // 通过 projectId 查找对应的视频生成记录，获取 user_id
+        // 通过 projectId 查找对应的视频生成记录，获取 user_id 和 refunded 状态
         const record = await db.get(
-            'SELECT user_id FROM video_generations WHERE id = ?',
+            'SELECT user_id, refunded FROM video_generations WHERE id = ?',
             projectId
         );
 
@@ -171,12 +171,24 @@ async function refundCredits(projectId, amount = 1, reason = '生成失败') {
             return { success: false, error: '用户不存在' };
         }
 
+        // 幂等性检查：如果已经退款过，直接返回
+        if (record.refunded === 1) {
+            console.log(`[DB] 项目 ${projectId} 已经退款过，跳过重复退款`);
+            return { success: true, userId: record.user_id, refundedAmount: 0, alreadyRefunded: true };
+        }
+
         const userId = record.user_id;
 
         // 增加用户积分
         await db.run(
             'UPDATE users SET credits = credits + ? WHERE id = ?',
             [amount, userId]
+        );
+
+        // 标记生成记录为已退款
+        await db.run(
+            'UPDATE video_generations SET refunded = 1 WHERE id = ?',
+            [projectId]
         );
 
         console.log(`[DB] 已为用户 ${userId} 退还 ${amount} 积分，原因: ${reason}`);
