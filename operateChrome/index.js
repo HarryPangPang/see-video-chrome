@@ -285,6 +285,22 @@ const setOptions = async (page, options = {}) => {
     // await page.waitForTimeout(500);
     console.log('[setOptions] 已选择视频生成');
   }
+  // 5. 首帧/尾帧/全能参考：用地址（优先本地 path，否则用 URL 下载到临时文件后上传，不重复存）
+  if (startFramePath || endFramePath || startFrameUrl || endFrameUrl || omniFramePaths || omniFrameUrls) {
+    const imagesResult = await setImages(page, {
+      frameMode,
+      startFrameUrl,
+      endFrameUrl,
+      startFramePath,
+      endFramePath,
+      omniFrameUrls,
+      omniFramePaths
+    });
+    // 如果图片上传失败，返回错误结果
+    if (!imagesResult.success) {
+      return { success: false, error: imagesResult.error };
+    }
+  }
 
   // 2. 模型：从工具栏设置区获取当前模型文案，不一致则点触发器→等弹窗→点非禁用的对应选项
   if (model) {
@@ -386,22 +402,6 @@ const setOptions = async (page, options = {}) => {
     }
   }
 
-  // 5. 首帧/尾帧/全能参考：用地址（优先本地 path，否则用 URL 下载到临时文件后上传，不重复存）
-  if (startFramePath || endFramePath || startFrameUrl || endFrameUrl || omniFramePaths || omniFrameUrls) {
-    const imagesResult = await setImages(page, {
-      frameMode,
-      startFrameUrl,
-      endFrameUrl,
-      startFramePath,
-      endFramePath,
-      omniFrameUrls,
-      omniFramePaths
-    });
-    // 如果图片上传失败，返回错误结果
-    if (!imagesResult.success) {
-      return { success: false, error: imagesResult.error };
-    }
-  }
 
   // 6. 等 200ms 后点击「生成」按钮，并监听生成接口响应以拿到 generate_id（见 jimeng.md 生成接口 / 生成结果返回）
   await page.waitForTimeout(200);
